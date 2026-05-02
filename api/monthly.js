@@ -3,6 +3,7 @@ import path from 'path';
 import { getQuery } from '../lib/query.js';
 import { dataRoot } from '../lib/paths.js';
 import { dayDateKey, coverageRange } from '../lib/dayDate.js';
+import { normalizeYearMonth } from '../lib/dateParams.js';
 
 /**
  * GET /api/monthly?country=al&city=tirana
@@ -35,10 +36,15 @@ export default function handler(req, res) {
     return res.status(404).json({ error: `City not found: ${country}/${city}` });
   }
 
-  const cityData    = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const targetMonth = month || currentMonth(); // "2026-05"
+  const cityData = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const rows = Array.isArray(cityData.data) ? cityData.data : null;
+  if (!rows?.length) {
+    return res.status(500).json({ error: 'Invalid city JSON: missing or empty data array' });
+  }
 
-  const days = cityData.data.filter(d => {
+  const targetMonth = normalizeYearMonth(month || currentMonth());
+
+  const days = rows.filter(d => {
     const key = dayDateKey(d);
     return key?.startsWith(targetMonth);
   });
@@ -46,7 +52,7 @@ export default function handler(req, res) {
   if (days.length === 0) {
     return res.status(404).json({
       error: `No data for month ${targetMonth}`,
-      coverage: coverageRange(cityData.data)
+      coverage: coverageRange(rows),
     });
   }
 

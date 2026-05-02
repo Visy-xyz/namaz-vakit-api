@@ -3,6 +3,7 @@ import path from 'path';
 import { getQuery } from '../lib/query.js';
 import { dataRoot } from '../lib/paths.js';
 import { dayDateKey, coverageRange } from '../lib/dayDate.js';
+import { normalizeYmd } from '../lib/dateParams.js';
 
 /**
  * GET /api/prayer?country=al&city=tirana
@@ -42,14 +43,15 @@ export default function handler(req, res) {
   }
 
   const cityData = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const target   = date || today();
+  const rows = Array.isArray(cityData.data) ? cityData.data : [];
+  const target = normalizeYmd(date || today());
 
-  const day = cityData.data.find(d => dayDateKey(d) === target);
+  const day = rows.find(d => dayDateKey(d) === target);
 
   if (!day) {
     return res.status(404).json({
       error: `No data for ${target}`,
-      coverage: coverageRange(cityData.data)
+      coverage: coverageRange(rows),
     });
   }
 
