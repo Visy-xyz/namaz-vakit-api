@@ -2,12 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { getQuery } from '../lib/query.js';
 import { dataRoot } from '../lib/paths.js';
+import { dayDateKey, coverageRange } from '../lib/dayDate.js';
 
 /**
  * GET /api/prayer?country=al&city=tirana
  * GET /api/prayer?country=al&city=tirana&date=2026-04-25
  *
  * Returns prayer times for a specific city and date.
+ * `times` is a short subset; `detail` is the full Diyanet row from the JSON file.
+ * `fileMeta` is the file’s `_meta` object (country, year, totalDays, fetchedAt, …).
  * Reads from cached JSON files — ZERO calls to Diyanet.
  */
 export default function handler(req, res) {
@@ -41,13 +44,12 @@ export default function handler(req, res) {
   const cityData = JSON.parse(fs.readFileSync(file, 'utf8'));
   const target   = date || today();
 
-  // Data format from Diyanet: { date: "2026-01-01", fajr: "05:27", ... }
-  const day = cityData.data.find(d => d.date === target);
+  const day = cityData.data.find(d => dayDateKey(d) === target);
 
   if (!day) {
     return res.status(404).json({
       error: `No data for ${target}`,
-      coverage: `${cityData.data[0]?.date} → ${cityData.data[cityData.data.length - 1]?.date}`
+      coverage: coverageRange(cityData.data)
     });
   }
 
@@ -63,6 +65,8 @@ export default function handler(req, res) {
       maghrib: day.maghrib,
       isha:    day.isha,
     },
+    detail:   day,
+    fileMeta: cityData._meta ?? null,
     fetchedAt: cityData._meta?.fetchedAt
   });
 }
