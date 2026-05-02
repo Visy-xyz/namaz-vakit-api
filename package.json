@@ -1,0 +1,12 @@
+{
+  "name": "namaz-vakit-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
