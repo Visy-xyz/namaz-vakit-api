@@ -14,7 +14,8 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Full Europe + US etc. can run for many hours; increase if the job hits the limit.
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repo
@@ -25,11 +26,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run fetch script
+      - name: Fetch prayer times (Europe list or Balkan fallback)
         env:
           DIYANET_EMAIL: ${{ secrets.DIYANET_EMAIL }}
-          DIYANET_PASS:  ${{ secrets.DIYANET_PASS }}
-        run: node scripts/fetch-yearly.mjs
+          DIYANET_PASS: ${{ secrets.DIYANET_PASS }}
+        run: |
+          if [ -f countries-all.json ] || [ -f countries.json ]; then
+            echo "Using scripts/fetch-europe.mjs (countries-all.json or countries.json present)"
+            node scripts/fetch-europe.mjs
+          else
+            echo "No country list JSON — using scripts/fetch-yearly.mjs (hardcoded city list)"
+            node scripts/fetch-yearly.mjs
+          fi
 
       - name: Build prayer catalog
         run: node scripts/build-prayer-catalog.mjs

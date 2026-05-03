@@ -119,9 +119,25 @@ For `/api/*`, responses include `Access-Control-Allow-Origin: *` and `Access-Con
 
 Production functions load per-city JSON from **`DATA_BASE_URL`** (public HTTPS base whose path layout mirrors `data/` in this repository, no trailing slash). Example: `https://raw.githubusercontent.com/Visy-xyz/namaz-vakit-api/main/data`. Set this in the Vercel project environment and redeploy after changes.
 
-The city catalogue file `generated/prayer-catalog.json` is generated with `npm run build:catalog` and should be committed when `data/` or labels change. GitHub Actions (`.github/workflows/yearly-refresh.yml`) refresh data and rebuild that catalogue.
+The city catalogue file `generated/prayer-catalog.json` is generated with `npm run build:catalog` and should be committed when `data/` or labels change.
 
-Repository secrets for Diyanet belong in **GitHub Actions secrets** only; do not commit `.env.local` or similar files.
+### Yearly refresh (GitHub Actions)
+
+Workflow: [`.github/workflows/yearly-refresh.yml`](.github/workflows/yearly-refresh.yml). It runs on **1 January 02:00 UTC** each year and can be started manually (**Actions → Yearly Prayer Times Refresh → Run workflow**).
+
+1. **Secrets** (repository **Settings → Secrets and variables → Actions**): `DIYANET_EMAIL`, `DIYANET_PASS` (Diyanet Awqat Salah account). Never commit these values in code or JSON.
+
+2. **Which fetch script runs**
+   - If **`countries-all.json`** or **`countries.json`** exists at the **repository root**, the workflow runs **`scripts/fetch-europe.mjs`**. That script maps Diyanet `countryId` to folders under `data/` (including **`33` → `us`**, **`52` → `ca`**). It **refreshes the login token** before JWT expiry when possible, and again on **HTTP 401**, so long runs stay authenticated. The job timeout is **360 minutes**; increase in the workflow file if needed.
+   - If neither file is present, it runs **`scripts/fetch-yearly.mjs`** (smaller hardcoded Balkan list).
+
+3. **After fetch**, the workflow runs **`npm run build:catalog`** and commits `data/**/*.json` and `generated/prayer-catalog.json`.
+
+4. **Local runs:** `DIYANET_EMAIL` and `DIYANET_PASS` in the environment, then `npm run fetch:europe` or `npm run fetch:yearly`. Optional flags for Europe: `--dry-run`, `--refetch`, `--country nl`.
+
+5. **Failures** during Europe fetch are appended to **`europe-errors.log`** at the repo root (ignored by `*.log` in `.gitignore`).
+
+If Diyanet credentials were ever pasted in chat, a ticket, or a public file, **change the Diyanet password** and update the GitHub secrets.
 
 ---
 
