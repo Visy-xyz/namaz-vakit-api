@@ -2,7 +2,8 @@
   "version": 2,
   "functions": {
     "api/*.js": {
-      "includeFiles": "data/**"
+      "includeFiles": "generated/prayer-catalog.json",
+      "excludeFiles": "data/**"
     }
   },
   "headers": [

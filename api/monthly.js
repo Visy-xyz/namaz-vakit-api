@@ -1,9 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import { getQuery } from '../lib/query.js';
-import { dataRoot } from '../lib/paths.js';
 import { dayDateKey, coverageRange } from '../lib/dayDate.js';
 import { normalizeYearMonth } from '../lib/dateParams.js';
+import { displayCityName } from '../lib/cityNormalizations.js';
+import { readCityJson, dataBaseUrlHint } from '../lib/readCityData.js';
 
 /**
  * GET /api/monthly?country=al&city=tirana
@@ -12,7 +11,7 @@ import { normalizeYearMonth } from '../lib/dateParams.js';
  * Returns all prayer times for a full month.
  * Each day includes `detail` — the full Diyanet row (hijri, moon URL, astronomical times, …).
  */
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600');
 
@@ -26,17 +25,20 @@ export default function handler(req, res) {
   if (!country || !city) {
     return res.status(400).json({
       error: 'Missing params',
-      example: '/api/monthly?country=al&city=tirana&month=2026-05'
+      example: '/api/monthly?country=al&city=tirana&month=2026-05',
     });
   }
 
-  const file = path.join(dataRoot(), country, `${city}.json`);
+  const cityData = await readCityJson(country, city);
 
-  if (!fs.existsSync(file)) {
-    return res.status(404).json({ error: `City not found: ${country}/${city}` });
+  if (!cityData) {
+    const hint = dataBaseUrlHint();
+    return res.status(404).json({
+      error: `City not found: ${country}/${city}`,
+      ...(hint ? { setup: hint } : {}),
+    });
   }
 
-  const cityData = JSON.parse(fs.readFileSync(file, 'utf8'));
   const rows = Array.isArray(cityData.data) ? cityData.data : null;
   if (!rows?.length) {
     return res.status(500).json({ error: 'Invalid city JSON: missing or empty data array' });
@@ -59,22 +61,23 @@ export default function handler(req, res) {
   return res.status(200).json({
     country,
     city,
-    month:     targetMonth,
-    days:      days.length,
-    fileMeta:  cityData._meta ?? null,
-    data:      days.map(d => ({
-      date:    dayDateKey(d),
+    cityDisplayName: displayCityName(country, city),
+    month: targetMonth,
+    days: days.length,
+    fileMeta: cityData._meta ?? null,
+    data: days.map(d => ({
+      date: dayDateKey(d),
       times: {
-        fajr:    d.fajr,
+        fajr: d.fajr,
         sunrise: d.sunrise,
-        dhuhr:   d.dhuhr,
-        asr:     d.asr,
+        dhuhr: d.dhuhr,
+        asr: d.asr,
         maghrib: d.maghrib,
-        isha:    d.isha,
+        isha: d.isha,
       },
-      detail:  d,
+      detail: d,
     })),
-    fetchedAt: cityData._meta?.fetchedAt
+    fetchedAt: cityData._meta?.fetchedAt,
   });
 }
 

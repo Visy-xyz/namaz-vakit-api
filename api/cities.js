@@ -2,20 +2,84 @@ import fs from 'fs';
 import path from 'path';
 import { getQuery } from '../lib/query.js';
 import { dataRoot } from '../lib/paths.js';
+import { countryMeta } from '../lib/countryMeta.js';
+import { displayCityName } from '../lib/cityNormalizations.js';
+import { catalogCitiesByCountry } from '../lib/prayerCatalog.js';
 
 const DATA_DIR = dataRoot();
 
-const COUNTRIES = {
-  al: { name: 'Albania',         nameAl: 'Shqipëri',  flag: '🇦🇱' },
-  xk: { name: 'Kosovo',          nameAl: 'Kosovë',    flag: '🇽🇰' },
-  mk: { name: 'North Macedonia', nameAl: 'Maqedoni',  flag: '🇲🇰' },
-  me: { name: 'Montenegro',      nameAl: 'Mali i Zi', flag: '🇲🇪' },
-  ba: { name: 'Bosnia',          nameAl: 'Bosnjë',    flag: '🇧🇦' },
-};
+/** @returns {{ code: string, dirName: string }[]} */
+function listCountryDirs() {
+  if (!fs.existsSync(DATA_DIR)) return [];
+  return fs
+    .readdirSync(DATA_DIR)
+    .filter(name => {
+      if (name.startsWith('.')) return false;
+      const full = path.join(DATA_DIR, name);
+      try {
+        return fs.statSync(full).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .map(dirName => ({ code: dirName.toLowerCase(), dirName }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+function citiesFromCatalog(countryFilter) {
+  const byCountry = catalogCitiesByCountry();
+  if (!byCountry) return null;
+
+  const result = {};
+  for (const code of Object.keys(byCountry).sort()) {
+    if (countryFilter && countryFilter.toLowerCase() !== code) continue;
+    const meta = countryMeta(code);
+    const slugs = byCountry[code];
+    const cities = slugs
+      .map(slug => ({
+        slug,
+        displayName: displayCityName(code, slug),
+        endpoint: `/api/prayer?country=${code}&city=${slug}`,
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'en', { sensitivity: 'base' }));
+
+    result[code] = { ...meta, cities };
+  }
+  return result;
+}
+
+function citiesFromFilesystem(countryFilter) {
+  const result = {};
+  for (const { code, dirName } of listCountryDirs()) {
+    if (countryFilter && countryFilter.toLowerCase() !== code) continue;
+
+    const dir = path.join(DATA_DIR, dirName);
+    const meta = countryMeta(code);
+
+    const cities = fs
+      .readdirSync(dir)
+      .filter(f => f.endsWith('.json'))
+      .map(f => {
+        const slug = f.replace(/\.json$/i, '');
+        return {
+          slug,
+          displayName: displayCityName(code, slug),
+          endpoint: `/api/prayer?country=${code}&city=${slug}`,
+        };
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'en', { sensitivity: 'base' }));
+
+    result[code] = { ...meta, cities };
+  }
+  return result;
+}
 
 /**
- * GET /api/cities             → all countries + cities
- * GET /api/cities?country=al  → only Albania
+ * GET /api/cities              → all countries + cities
+ * GET /api/cities?country=al   → only that country
+ *
+ * On Vercel, uses generated/prayer-catalog.json (see scripts/build-prayer-catalog.mjs).
+ * Locally falls back to scanning data/ if the catalog is missing.
  */
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -27,26 +91,8 @@ export default function handler(req, res) {
   }
 
   const { country } = getQuery(req);
-  const result = {};
+  const fromCat = citiesFromCatalog(country || undefined);
+  const payload = fromCat ?? citiesFromFilesystem(country || undefined);
 
-  for (const [code, info] of Object.entries(COUNTRIES)) {
-    if (country && country !== code) continue;
-
-    const dir = path.join(DATA_DIR, code);
-    if (!fs.existsSync(dir)) continue;
-
-    const cities = fs.readdirSync(dir)
-      .filter(f => f.endsWith('.json'))
-      .map(f => {
-        const slug = f.replace('.json', '');
-        return {
-          slug,
-          endpoint: `/api/prayer?country=${code}&city=${slug}`
-        };
-      });
-
-    result[code] = { ...info, cities };
-  }
-
-  return res.status(200).json(result);
+  return res.status(200).json(payload);
 }

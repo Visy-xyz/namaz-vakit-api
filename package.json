@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "build:catalog": "node scripts/build-prayer-catalog.mjs"
   },
   "engines": {
     "node": ">=18.x"

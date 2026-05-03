@@ -31,8 +31,13 @@ jobs:
           DIYANET_PASS:  ${{ secrets.DIYANET_PASS }}
         run: node scripts/fetch-yearly.mjs
 
+      - name: Build prayer catalog
+        run: node scripts/build-prayer-catalog.mjs
+
       - name: Commit new data
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: refresh prayer times ${{ github.run_number }}"
-          file_pattern: 'data/**/*.json'
+          file_pattern: |
+            data/**/*.json
+            generated/prayer-catalog.json

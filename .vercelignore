@@ -1,0 +1,4 @@
+# Do not upload city JSON to Vercel (GB-scale). Host the same tree publicly and set
+# DATA_BASE_URL (see README / deploy notes). Example:
+# https://raw.githubusercontent.com/OWNER/REPO/main/data
+data/**

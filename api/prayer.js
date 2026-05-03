@@ -1,9 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import { getQuery } from '../lib/query.js';
-import { dataRoot } from '../lib/paths.js';
 import { dayDateKey, coverageRange } from '../lib/dayDate.js';
 import { normalizeYmd } from '../lib/dateParams.js';
+import { displayCityName } from '../lib/cityNormalizations.js';
+import { readCityJson, dataBaseUrlHint } from '../lib/readCityData.js';
 
 /**
  * GET /api/prayer?country=al&city=tirana
@@ -12,9 +11,9 @@ import { normalizeYmd } from '../lib/dateParams.js';
  * Returns prayer times for a specific city and date.
  * `times` is a short subset; `detail` is the full Diyanet row from the JSON file.
  * `fileMeta` is the file’s `_meta` object (country, year, totalDays, fetchedAt, …).
- * Reads from cached JSON files — ZERO calls to Diyanet.
+ * Reads from cached JSON — ZERO calls to Diyanet. On Vercel, JSON is loaded from DATA_BASE_URL.
  */
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600');
 
@@ -29,20 +28,21 @@ export default function handler(req, res) {
     return res.status(400).json({
       error: 'Missing params',
       example: '/api/prayer?country=al&city=tirana',
-      countries: ['al', 'xk', 'mk', 'me', 'ba']
+      hint: 'List cities: GET /api/cities or /api/cities?country=us',
     });
   }
 
-  const file = path.join(dataRoot(), country, `${city}.json`);
+  const cityData = await readCityJson(country, city);
 
-  if (!fs.existsSync(file)) {
+  if (!cityData) {
+    const hint = dataBaseUrlHint();
     return res.status(404).json({
       error: `City not found: ${country}/${city}`,
-      hint: `Try /api/cities?country=${country}`
+      hint: `Try /api/cities?country=${country}`,
+      ...(hint ? { setup: hint } : {}),
     });
   }
 
-  const cityData = JSON.parse(fs.readFileSync(file, 'utf8'));
   const rows = Array.isArray(cityData.data) ? cityData.data : [];
   const target = normalizeYmd(date || today());
 
@@ -58,21 +58,22 @@ export default function handler(req, res) {
   return res.status(200).json({
     country,
     city,
+    cityDisplayName: displayCityName(country, city),
     date: target,
     times: {
-      fajr:    day.fajr,
+      fajr: day.fajr,
       sunrise: day.sunrise,
-      dhuhr:   day.dhuhr,
-      asr:     day.asr,
+      dhuhr: day.dhuhr,
+      asr: day.asr,
       maghrib: day.maghrib,
-      isha:    day.isha,
+      isha: day.isha,
     },
-    detail:   day,
+    detail: day,
     fileMeta: cityData._meta ?? null,
-    fetchedAt: cityData._meta?.fetchedAt
+    fetchedAt: cityData._meta?.fetchedAt,
   });
 }
 
 function today() {
-  return new Date().toISOString().split('T')[0]; // "2026-05-02"
+  return new Date().toISOString().split('T')[0];
 }
