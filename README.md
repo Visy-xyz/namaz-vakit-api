@@ -1,192 +1,130 @@
 # Namaz Vakit API
 
-REST API for Islamic prayer times in **Albania, Kosovo, North Macedonia, Montenegro, and Bosnia and Herzegovina**. Data is served from pre-generated JSON caches (Diyanet-shaped payload). Requests hit **no external prayer API at runtime**.
+Public HTTP API for Islamic prayer times. Responses are built from pre-generated JSON (Diyanet-shaped fields). The service does not call Diyanet at request time.
 
-**Stack:** Node.js · ES modules · [Vercel](https://vercel.com/) serverless routes under `/api`.
-
----
-
-## Base URL
-
-| Environment | Example |
-|-------------|---------|
-| Production | `https://namaz-vakti-api.frmsh.al` |
-| Local | `http://localhost:3000` (with `vercel dev`) |
+**Production base URL:** `https://namaz.frmsh.al`
 
 ---
 
-## Quick start
+## Finding countries and cities
 
-```http
-GET /api/cities
-GET /api/prayer?country=al&city=tirana
-GET /api/monthly?country=al&city=tirana&month=2026-05
-```
+**1. List everything**
 
----
+`GET /api/cities`
 
-## Supported regions (`country`)
+Returns a JSON object whose **top-level keys are country codes** (lowercase, ISO-style: `al`, `us`, `ca`, `de`, …). Each entry describes one country and lists its cities.
 
-| Code | Scope |
-|------|--------|
-| `al` | Albania |
-| `xk` | Kosovo |
-| `mk` | North Macedonia |
-| `me` | Montenegro |
-| `ba` | Bosnia and Herzegovina |
+**2. List one country only (recommended for clients)**
 
-City slugs match filenames under `data/{country}/{city}.json` (e.g. `tirana`, `podgorice`, `sarajevo`). Use **`/api/cities`** to list valid slugs per country.
+`GET /api/cities?country={code}`
+
+Example: `GET /api/cities?country=us`
+
+Use this when you only need cities for a single country; the full catalogue response can be large.
+
+**3. Read the response shape**
+
+For each country object:
+
+| Field | Meaning |
+|-------|---------|
+| `name` | English country name |
+| `nameAl` | Albanian label where defined; otherwise aligned with `name` |
+| `flag` | Unicode regional indicator sequence |
+| `cities` | Array of `{ slug, displayName, endpoint }` |
+
+- **`slug`** is the value you pass as `city` to `/api/prayer` and `/api/monthly`.
+- **`displayName`** is the human-readable city label for UI.
+- **`endpoint`** is a suggested relative URL for one-day prayer data (same as `GET /api/prayer?country=…&city=…`).
+
+**4. Slug rules**
+
+City slugs match repository filenames: `data/{country}/{slug}.json` with the `.json` suffix removed. Multi-word names use underscores (e.g. `new_york`, `salt_lake_city`).
+
+**5. Source of truth in Git**
+
+If you need to confirm a file exists without calling the API, browse:
+
+`https://github.com/Visy-xyz/namaz-vakit-api/tree/main/data/{country}`
 
 ---
 
 ## Endpoints
 
-### `GET /api/cities`
+All routes accept **GET** only (with **OPTIONS** for CORS). All successful responses are **JSON**.
 
-Lists countries and cities from the bundled `data/` tree.
+### Catalogue
 
-**Query**
+| | |
+|---|---|
+| **URL** | `/api/cities` |
+| **Query** | `country` (optional): restrict to one country code. |
+| **200 body** | Map of country code → `{ name, nameAl, flag, cities[] }` as above. |
+| **Caching** | `Cache-Control: public, max-age=300` |
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `country` | No | If set, only that country (`al`, `xk`, `mk`, `me`, `ba`). |
+### Single day
 
-**Response** — keyed by country code; each entry includes labels (`name`, `nameAl`, `flag`) and a `cities` array with `{ slug, endpoint }`.
+| | |
+|---|---|
+| **URL** | `/api/prayer` |
+| **Query** | `country` (required), `city` (required), `date` (optional, `YYYY-MM-DD`). |
+| **200 body** | `country`, `city`, `cityDisplayName`, `date`, `times` (`fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`), `detail` (full source row), `fileMeta`, `fetchedAt`. |
+| **Errors** | `400` if `country` or `city` is missing; `404` if the city file is missing or the date is outside coverage. |
+| **Caching** | `Cache-Control: public, max-age=3600` |
 
-**Cache:** `Cache-Control: public, max-age=300` (5 minutes).
+If `date` is omitted, the server uses **UTC calendar “today”**. For user-local “today”, the client should compute the date in the user’s time zone and send it explicitly.
 
----
+### Full month
 
-### `GET /api/prayer`
+| | |
+|---|---|
+| **URL** | `/api/monthly` |
+| **Query** | `country` (required), `city` (required), `month` (optional, `YYYY-MM`). |
+| **200 body** | `month`, `days`, `cityDisplayName`, `fileMeta`, `data` (array of `{ date, times, detail }`), `fetchedAt`. |
+| **Errors** | `400` if required query params are missing; `404` if there is no data for that month; `500` if the city file is invalid. |
+| **Caching** | `Cache-Control: public, max-age=3600` |
 
-Single calendar day for one city.
-
-**Query**
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `country` | **Yes** | Country code (`al`, `xk`, …). |
-| `city` | **Yes** | Slug matching `data/{country}/{city}.json`. |
-| `date` | No | Gregorian date `YYYY-MM-DD`. Omit to use server **UTC calendar “today”** (see note below). |
-
-**Response (200)**
-
-| Field | Description |
-|-------|--------------|
-| `country`, `city`, `date` | Echo + resolved date. |
-| `times` | `{ fajr, sunrise, dhuhr, asr, maghrib, isha }`. |
-| `detail` | Full raw day object from the JSON file (hijri, moon icon URL, astronomical times, all Diyanet fields). |
-| `fileMeta` | File header `_meta` (`year`, `totalDays`, `fetchedAt`, …). |
-| `fetchedAt` | Duplicate of `_meta.fetchedAt` for convenience. |
-
-**Errors:** `400` missing params · `404` unknown city or date outside coverage · always JSON body when applicable.
-
-**Cache:** `max-age=3600` (1 hour).
-
-**Date note:** Default “today” uses `toISOString().split('T')[0]` (UTC). For strict local-day UX, pass `date` from the client in the user’s timezone.
+Unpadded months in `month` are normalised (e.g. `2026-5` becomes `2026-05`). If `month` is omitted, the server uses the **current UTC calendar month**.
 
 ---
 
-### `GET /api/monthly`
+## Example requests
 
-All days in a Gregorian month for one city.
-
-**Query**
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `country` | **Yes** | Country code. |
-| `city` | **Yes** | City slug. |
-| `month` | No | `YYYY-MM` (e.g. `2026-05`). **Unpadded months are normalised** (e.g. `2026-5` → `2026-05`). Omit = current **server** month (same caveats as prayer “today”). |
-
-**Response (200)**
-
-| Field | Description |
-|-------|-------------|
-| `month` | Normalised `YYYY-MM`. |
-| `days` | Count of rows returned. |
-| `fileMeta` | `_meta` for that city file. |
-| `data` | Array of `{ date, times, detail }` — same meaning as `/api/prayer`. |
-| `fetchedAt` | From `_meta`. |
-
-**Errors:** `400` missing params · `404` no rows for that month · `500` invalid file shape (empty/missing `data` array).
-
-**Cache:** `max-age=3600`.
-
----
-
-## CORS
-
-`Access-Control-Allow-Origin: *` and `GET, OPTIONS` are set for `/api/*` in `vercel.json`. Handlers answer `OPTIONS` with `204`.
-
----
-
-## Example URLs
-
-```text
-https://namaz-vakti-api.frmsh.al/api/cities
-https://namaz-vakti-api.frmsh.al/api/cities?country=al
-https://namaz-vakti-api.frmsh.al/api/prayer?country=al&city=tirana
-https://namaz-vakti-api.frmsh.al/api/prayer?country=me&city=podgorice&date=2026-05-02
-https://namaz-vakti-api.frmsh.al/api/monthly?country=ba&city=sarajevo&month=2026-05
+```http
+GET https://namaz.frmsh.al/api/cities
+GET https://namaz.frmsh.al/api/cities?country=us
+GET https://namaz.frmsh.al/api/prayer?country=al&city=tirana
+GET https://namaz.frmsh.al/api/prayer?country=us&city=seattle&date=2026-05-03
+GET https://namaz.frmsh.al/api/monthly?country=ca&city=vancouver&month=2026-05
 ```
 
 ---
 
-## Data layout
+## CORS and methods
 
-```text
-data/
-  al/   # Albania — *.json per city
-  xk/   # Kosovo
-  mk/   # North Macedonia
-  me/   # Montenegro
-  ba/   # Bosnia and Herzegovina
-```
+For `/api/*`, responses include `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Methods: GET, OPTIONS`. Preflight `OPTIONS` requests return **204** with an empty body.
 
-Each file has `_meta` and a `data` array of day objects (Diyanet-style: `gregorianDateLongIso8601`, `gregorianDateShort`, prayer fields, etc.). The API exposes a normalised `date` (`YYYY-MM-DD`) plus the full row in `detail`.
+---
 
-On Vercel, `vercel.json` bundles `data/**` into each `api/*.js` function via `includeFiles`.
+## Client integration (general)
+
+- Use **HTTPS** against the production host above.
+- Treat **non-200** responses as errors; response bodies are JSON when applicable.
+- Apply **reasonable timeouts**; `/api/cities` without `country` can be slow to transfer on poor networks.
+- **No API key** is required for these read-only endpoints. Do not embed Diyanet or other credentials in mobile or web clients for this API.
+
+---
+
+## Operators (Vercel and repository)
+
+Production functions load per-city JSON from **`DATA_BASE_URL`** (public HTTPS base whose path layout mirrors `data/` in this repository, no trailing slash). Example: `https://raw.githubusercontent.com/Visy-xyz/namaz-vakit-api/main/data`. Set this in the Vercel project environment and redeploy after changes.
+
+The city catalogue file `generated/prayer-catalog.json` is generated with `npm run build:catalog` and should be committed when `data/` or labels change. GitHub Actions (`.github/workflows/yearly-refresh.yml`) refresh data and rebuild that catalogue.
+
+Repository secrets for Diyanet belong in **GitHub Actions secrets** only; do not commit `.env.local` or similar files.
 
 ---
 
 ## Local development
 
-**Requirements:** Node.js **18+** and [Vercel CLI](https://vercel.com/docs/cli).
-
-There are no npm runtime dependencies (`package.json` is metadata + `vercel dev` script only). Either install the CLI globally or use `npx`:
-
-```bash
-npx vercel dev
-# or after: npm install -g vercel
-vercel dev
-```
-
-Open the URLs printed by the CLI (typically port **3000**).
-
----
-
-## Deploy (Vercel)
-
-1. Connect the Git repo in the Vercel dashboard **or** `vercel` / `vercel --prod` from this directory.
-2. Ensure `package.json` is valid JSON and the repo includes `api/*.js`, `lib/`, `data/`, `vercel.json`.
-3. **Preview deployments:** if you see **401**, check **Project → Settings → Deployment Protection** — previews may require auth until disabled or bypassed.
-
----
-
-## Project structure
-
-```text
-api/
-  cities.js      # catalogue
-  prayer.js      # single day
-  monthly.js     # whole month
-lib/
-  query.js       # query string parsing (Vercel-safe)
-  paths.js       # data root resolution
-  dayDate.js     # map Diyanet gregorian fields → YYYY-MM-DD
-  dateParams.js  # normalise YYYY-M / YYYY-M-D query params
-data/            # bundled city JSON caches
-package.json
-vercel.json
-```
+Requires Node.js 18+ and the [Vercel CLI](https://vercel.com/docs/cli). Run `npm run build:catalog` if `generated/prayer-catalog.json` is missing, then `npx vercel dev`. With local `data/` present and `DATA_BASE_URL` unset, prayer and monthly routes read from the filesystem.
