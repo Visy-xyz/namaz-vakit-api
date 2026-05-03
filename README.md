@@ -33,6 +33,7 @@ No live calls to Diyanet on each request.
 | **What it does** | Returns Islamic prayer times (`fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`) for cities stored under `data/{country}/{city}.json`. |
 | **Coverage** | Many countries (Europe, United States, Canada, Western Balkans, and more). The live list is always from **`GET /api/cities`**. |
 | **Format** | JSON only. Optional `detail` field contains the full Diyanet-shaped row for that day. |
+| **Web UI** | Opening **`https://namaz.frmsh.al/`** serves a small bilingual (English / Shqip) page that calls the same API (default **Albania · Tiranë**). Source: `index.html` at the repository root. |
 
 ---
 

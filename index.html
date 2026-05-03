@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Namaz — Prayer Times</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0c1f1e;
+      --deep: #0e2a28;
+      --panel: rgba(18, 52, 50, 0.92);
+      --gold: #c9a962;
+      --gold-dim: rgba(201, 169, 98, 0.35);
+      --cream: #f7f2e9;
+      --muted: #a8c4c0;
+      --accent: #1d6b5e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Source Sans 3", system-ui, sans-serif;
+      color: var(--cream);
+      background-color: var(--deep);
+      background-image:
+        radial-gradient(ellipse 120% 80% at 50% -20%, rgba(29, 107, 94, 0.45), transparent 55%),
+        repeating-linear-gradient(
+          -18deg,
+          transparent,
+          transparent 14px,
+          rgba(201, 169, 98, 0.04) 14px,
+          rgba(201, 169, 98, 0.04) 15px
+        ),
+        repeating-linear-gradient(
+          18deg,
+          transparent,
+          transparent 14px,
+          rgba(201, 169, 98, 0.035) 14px,
+          rgba(201, 169, 98, 0.035) 15px
+        ),
+        linear-gradient(165deg, #0a2422 0%, #0e3532 40%, #0a1c1b 100%);
+    }
+    .frame {
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2.5rem;
+    }
+    header {
+      text-align: center;
+      padding: 1.5rem 0 1rem;
+      border-bottom: 1px solid var(--gold-dim);
+      position: relative;
+    }
+    header::before,
+    header::after {
+      content: "";
+      position: absolute;
+      bottom: -4px;
+      width: 3rem;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      opacity: 0.85;
+    }
+    header::before { left: calc(50% - 5rem); }
+    header::after { right: calc(50% - 5rem); }
+    h1 {
+      font-family: Amiri, Georgia, serif;
+      font-weight: 700;
+      font-size: clamp(1.75rem, 5vw, 2.35rem);
+      letter-spacing: 0.02em;
+      margin: 0 0 0.35rem;
+      color: var(--cream);
+      text-shadow: 0 1px 2px rgba(0,0,0,.35);
+    }
+    .subtitle {
+      font-size: 0.95rem;
+      color: var(--muted);
+      margin: 0;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1rem;
+    }
+    .lang-toggle {
+      display: inline-flex;
+      border: 1px solid var(--gold-dim);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .lang-toggle button {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      padding: 0.4rem 0.9rem;
+      font: inherit;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .lang-toggle button[aria-pressed="true"] {
+      background: rgba(201, 169, 98, 0.2);
+      color: var(--gold);
+      font-weight: 600;
+    }
+    .lang-toggle button:hover { color: var(--cream); }
+    .card {
+      margin-top: 1.5rem;
+      background: var(--panel);
+      border: 1px solid var(--gold-dim);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+      box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    }
+    .controls {
+      display: grid;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (min-width: 540px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+    }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gold);
+      margin-bottom: 0.35rem;
+    }
+    select {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid rgba(201, 169, 98, 0.35);
+      background: rgba(8, 28, 26, 0.65);
+      color: var(--cream);
+      font: inherit;
+      cursor: pointer;
+    }
+    select:focus {
+      outline: 2px solid var(--gold);
+      outline-offset: 2px;
+    }
+    .meta {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .meta strong { color: var(--gold); font-weight: 600; }
+    .times {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+      gap: 0.75rem;
+    }
+    .slot {
+      background: rgba(8, 32, 30, 0.55);
+      border: 1px solid rgba(201, 169, 98, 0.22);
+      border-radius: 10px;
+      padding: 0.85rem 0.65rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .slot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(201, 169, 98, 0.06), transparent 50%);
+      pointer-events: none;
+    }
+    .slot .en {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+    .slot .sq {
+      font-family: Amiri, Georgia, serif;
+      font-size: 0.95rem;
+      color: var(--gold);
+      margin-bottom: 0.45rem;
+    }
+    .slot .t {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--cream);
+      font-variant-numeric: tabular-nums;
+    }
+    .status {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--muted);
+    }
+    .status.err { color: #f0a8a8; }
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--gold); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <header>
+      <h1 id="pageTitle">Prayer Times</h1>
+      <p class="subtitle" id="pageSub">Namaz.frmsh.al</p>
+      <div class="toolbar">
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button type="button" id="btnEn" aria-pressed="true">English</button>
+          <button type="button" id="btnSq" aria-pressed="false">Shqip</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="selCountry">
+      <div class="controls">
+        <div>
+          <label for="selCountry" id="lblCountry">Country</label>
+          <select id="selCountry"></select>
+        </div>
+        <div>
+          <label for="selCity" id="lblCity">City</label>
+          <select id="selCity"></select>
+        </div>
+      </div>
+      <p class="meta" id="metaLine" hidden></p>
+      <div id="timesArea" class="times" hidden></div>
+      <div id="status" class="status" role="status">Loading…</div>
+    </section>
+
+    <footer>
+      <a href="/api/cities" id="linkApi">API</a>
+      ·
+      <a href="https://github.com/Visy-xyz/namaz-vakit-api" id="linkGh" rel="noopener noreferrer">GitHub</a>
+    </footer>
+  </div>
+
+  <script>
+(function () {
+  const DEFAULT_COUNTRY = "al";
+  const DEFAULT_CITY = "tirana";
+
+  const I18N = {
+    en: {
+      title: "Prayer Times",
+      sub: "Today — select location",
+      country: "Country",
+      city: "City",
+      loading: "Loading…",
+      loadCities: "Loading cities…",
+      err: "Could not load prayer times.",
+      errCities: "Could not load cities.",
+      errCountries: "Could not load countries.",
+      api: "API",
+      gh: "GitHub",
+      prayers: [
+        { key: "fajr", en: "Fajr", sq: "Sabahu" },
+        { key: "sunrise", en: "Sunrise", sq: "Lindja e diellit" },
+        { key: "dhuhr", en: "Dhuhr", sq: "Dreka" },
+        { key: "asr", en: "Asr", sq: "Ikindia" },
+        { key: "maghrib", en: "Maghrib", sq: "Akshami" },
+        { key: "isha", en: "Isha", sq: "Jacia" },
+      ],
+    },
+    sq: {
+      title: "Kohët e namazit",
+      sub: "Sot — zgjidh vendndodhjen",
+      country: "Shteti",
+      city: "Qyteti",
+      loading: "Duke u ngarkuar…",
+      loadCities: "Duke ngarkuar qytetet…",
+      err: "Nuk u ngarkuan kohët e namazit.",
+      errCities: "Nuk u ngarkuan qytetet.",
+      errCountries: "Nuk u ngarkuan shtetet.",
+      api: "API",
+      gh: "GitHub",
+      prayers: [
+        { key: "fajr", en: "Fajr", sq: "Sabahu" },
+        { key: "sunrise", en: "Sunrise", sq: "Lindja e diellit" },
+        { key: "dhuhr", en: "Dhuhr", sq: "Dreka" },
+        { key: "asr", en: "Asr", sq: "Ikindia" },
+        { key: "maghrib", en: "Maghrib", sq: "Akshami" },
+        { key: "isha", en: "Isha", sq: "Jacia" },
+      ],
+    },
+  };
+
+  let lang = "en";
+  let countriesPayload = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  function t() {
+    return I18N[lang];
+  }
+
+  function applyLang() {
+    const x = t();
+    $("pageTitle").textContent = x.title;
+    $("pageSub").textContent = x.sub;
+    $("lblCountry").textContent = x.country;
+    $("lblCity").textContent = x.city;
+    $("linkApi").textContent = x.api;
+    $("linkGh").textContent = x.gh;
+    $("btnEn").setAttribute("aria-pressed", lang === "en" ? "true" : "false");
+    $("btnSq").setAttribute("aria-pressed", lang === "sq" ? "true" : "false");
+    renderTimes(lastTimes);
+  }
+
+  let lastTimes = null;
+
+  function localDateStr() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+
+  async function fetchJson(path) {
+    const r = await fetch(path, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json();
+  }
+
+  function setStatus(msg, isErr) {
+    const el = $("status");
+    el.textContent = msg;
+    el.classList.toggle("err", !!isErr);
+    el.hidden = !msg;
+  }
+
+  function fillCountries(data) {
+    const sel = $("selCountry");
+    sel.innerHTML = "";
+    const codes = Object.keys(data).sort((a, b) => {
+      const na = (data[a].name || a).toLowerCase();
+      const nb = (data[b].name || b).toLowerCase();
+      return na.localeCompare(nb);
+    });
+    for (const code of codes) {
+      const o = document.createElement("option");
+      o.value = code;
+      const info = data[code];
+      const label = (info && info.flag ? info.flag + " " : "") + (info && info.name ? info.name : code.toUpperCase());
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+    if (codes.includes(DEFAULT_COUNTRY)) sel.value = DEFAULT_COUNTRY;
+    else if (codes.length) sel.value = codes[0];
+  }
+
+  async function loadCitiesForCountry(code) {
+    const sel = $("selCity");
+    sel.innerHTML = "";
+    setStatus(t().loadCities, false);
+    $("timesArea").hidden = true;
+    $("metaLine").hidden = true;
+    const data = await fetchJson("/api/cities?country=" + encodeURIComponent(code));
+    const entry = data[code];
+    const cities = (entry && entry.cities) || [];
+    cities.sort((a, b) => (a.displayName || a.slug).localeCompare(b.displayName || b.slug, "en", { sensitivity: "base" }));
+    for (const c of cities) {
+      const o = document.createElement("option");
+      o.value = c.slug;
+      o.textContent = c.displayName || c.slug;
+      sel.appendChild(o);
+    }
+    const slugs = cities.map((c) => c.slug);
+    if (code === DEFAULT_COUNTRY && slugs.includes(DEFAULT_CITY)) sel.value = DEFAULT_CITY;
+    else if (slugs.length) sel.value = slugs[0];
+    setStatus("", false);
+  }
+
+  function renderTimes(timesObj) {
+    lastTimes = timesObj;
+    const area = $("timesArea");
+    const meta = $("metaLine");
+    if (!timesObj || !timesObj.times) {
+      area.innerHTML = "";
+      area.hidden = true;
+      meta.hidden = true;
+      return;
+    }
+    const x = t();
+    const name = timesObj.cityDisplayName || timesObj.city;
+    const date = timesObj.date;
+    meta.innerHTML =
+      "<strong>" +
+      escapeHtml(name) +
+      "</strong> · " +
+      escapeHtml(date);
+    meta.hidden = false;
+    const times = timesObj.times;
+    const rows = x.prayers;
+    area.innerHTML = rows
+      .map(function (p) {
+        const v = times[p.key];
+        const showEn = lang === "en";
+        return (
+          '<div class="slot">' +
+          '<div class="en">' +
+          escapeHtml(showEn ? p.en : p.sq) +
+          "</div>" +
+          '<div class="sq">' +
+          escapeHtml(showEn ? p.sq : p.en) +
+          "</div>" +
+          '<div class="t">' +
+          escapeHtml(v != null ? String(v) : "\u2014") +
+          "</div>" +
+          "</div>"
+        );
+      })
+      .join("");
+    area.hidden = false;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function loadPrayer() {
+    const country = $("selCountry").value;
+    const city = $("selCity").value;
+    if (!country || !city) return;
+    setStatus(t().loading, false);
+    $("timesArea").hidden = true;
+    try {
+      const q = new URLSearchParams({ country, city, date: localDateStr() });
+      const data = await fetchJson("/api/prayer?" + q.toString());
+      setStatus("", false);
+      renderTimes(data);
+    } catch (e) {
+      setStatus(t().err, true);
+      $("timesArea").hidden = true;
+      $("metaLine").hidden = true;
+    }
+  }
+
+  async function init() {
+    applyLang();
+    setStatus(t().loading, false);
+    try {
+      countriesPayload = await fetchJson("/api/cities");
+      fillCountries(countriesPayload);
+      await loadCitiesForCountry($("selCountry").value);
+      await loadPrayer();
+    } catch (e) {
+      setStatus(t().errCountries, true);
+    }
+  }
+
+  $("btnEn").addEventListener("click", function () {
+    lang = "en";
+    applyLang();
+  });
+  $("btnSq").addEventListener("click", function () {
+    lang = "sq";
+    applyLang();
+  });
+
+  $("selCountry").addEventListener("change", async function () {
+    try {
+      await loadCitiesForCountry(this.value);
+      await loadPrayer();
+    } catch (e) {
+      setStatus(t().errCities, true);
+    }
+  });
+
+  $("selCity").addEventListener("change", function () {
+    loadPrayer();
+  });
+
+  init();
+})();
+  </script>
+</body>
+</html>

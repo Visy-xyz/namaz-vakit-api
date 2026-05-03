@@ -1,5 +1,8 @@
 {
   "version": 2,
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
+  ],
   "functions": {
     "api/*.js": {
       "includeFiles": "generated/prayer-catalog.json",
