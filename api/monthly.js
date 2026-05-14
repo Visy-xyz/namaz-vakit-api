@@ -3,6 +3,7 @@ import { dayDateKey, coverageRange } from '../lib/dayDate.js';
 import { normalizeYearMonth } from '../lib/dateParams.js';
 import { displayCityName } from '../lib/cityNormalizations.js';
 import { readCityJson, dataBaseUrlHint } from '../lib/readCityData.js';
+import { validateLocation, validateMonth } from '../lib/validate.js';
 
 /**
  * GET /api/monthly?country=al&city=tirana
@@ -22,12 +23,11 @@ export default async function handler(req, res) {
 
   const { country, city, month } = getQuery(req);
 
-  if (!country || !city) {
-    return res.status(400).json({
-      error: 'Missing params',
-      example: '/api/monthly?country=al&city=tirana&month=2026-05',
-    });
-  }
+  const locationErr = validateLocation(country, city);
+  if (locationErr) return res.status(400).json({ error: locationErr, example: '/api/monthly?country=al&city=tirana&month=2026-05' });
+
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
 
   const cityData = await readCityJson(country, city);
 
@@ -46,16 +46,21 @@ export default async function handler(req, res) {
 
   const targetMonth = normalizeYearMonth(month || currentMonth());
 
-  const days = rows.filter(d => {
-    const key = dayDateKey(d);
-    return key?.startsWith(targetMonth);
-  });
+  let days = rows.filter(d => dayDateKey(d)?.startsWith(targetMonth));
+  let approximate = false;
 
   if (days.length === 0) {
-    return res.status(404).json({
-      error: `No data for month ${targetMonth}`,
-      coverage: coverageRange(rows),
-    });
+    const fallback = prevYearMonth(targetMonth);
+    const fallbackDays = fallback ? rows.filter(d => dayDateKey(d)?.startsWith(fallback)) : [];
+    if (fallbackDays.length > 0) {
+      days = fallbackDays;
+      approximate = true;
+    } else {
+      return res.status(404).json({
+        error: `No data for month ${targetMonth}`,
+        coverage: coverageRange(rows),
+      });
+    }
   }
 
   return res.status(200).json({
@@ -64,6 +69,7 @@ export default async function handler(req, res) {
     cityDisplayName: displayCityName(country, city),
     month: targetMonth,
     days: days.length,
+    ...(approximate ? { approximate: true, approximateNote: 'Current year not yet available — using previous year times as estimate' } : {}),
     fileMeta: cityData._meta ?? null,
     data: days.map(d => ({
       date: dayDateKey(d),
@@ -84,4 +90,10 @@ export default async function handler(req, res) {
 function currentMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function prevYearMonth(ym) {
+  const m = ym.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  return `${parseInt(m[1], 10) - 1}-${m[2]}`;
 }

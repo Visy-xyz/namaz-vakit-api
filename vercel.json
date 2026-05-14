@@ -7,6 +7,10 @@
     "api/*.js": {
       "includeFiles": "generated/prayer-catalog.json",
       "excludeFiles": "data/**"
+    },
+    "api/v1/*.js": {
+      "includeFiles": "generated/prayer-catalog.json",
+      "excludeFiles": "data/**"
     }
   },
   "headers": [

@@ -7,13 +7,13 @@
 import fs   from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { BASE, DELAY, getToken, sleep } from "./_shared.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
 
 const EMAIL = process.env.DIYANET_EMAIL;
 const PASS  = process.env.DIYANET_PASS;
-const BASE  = "https://awqatsalah.diyanet.gov.tr";
 const YEAR  = new Date().getFullYear();
 
 // Të gjitha qytetet — 99 total
@@ -124,18 +124,6 @@ const CITIES = [
   { country:"ba", city:"visoko",        cityId:12026 },
 ];
 
-async function getToken() {
-  const res  = await fetch(`${BASE}/Auth/Login`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ Email: EMAIL, Password: PASS })
-  });
-  const d = await res.json();
-  const t = d?.data?.accessToken || d?.Data?.AccessToken;
-  if (!t) throw new Error("Login deshtoi: " + JSON.stringify(d));
-  return t;
-}
-
 async function fetchCity(token, cityId) {
   const res = await fetch(`${BASE}/api/PrayerTime/DateRange`, {
     method:  "POST",
@@ -167,7 +155,7 @@ async function main() {
   console.log(`\nNAMAZ VAKIT — RIFRESKIM VJETOR ${YEAR}`);
   console.log(`📋 ${CITIES.length} qytete\n`);
 
-  const token = await getToken();
+  const token = await getToken(EMAIL, PASS);
   console.log("✅ Login OK\n");
 
   let ok = 0, fail = 0, lastCountry = "";
@@ -190,7 +178,7 @@ async function main() {
       console.log(`❌ ${err.message}`);
       fail++;
     }
-    await new Promise(r => setTimeout(r, 1200));
+    await sleep(DELAY);
   }
 
   console.log(`\n${"═".repeat(40)}`);

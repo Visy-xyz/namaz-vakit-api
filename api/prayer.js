@@ -3,6 +3,7 @@ import { dayDateKey, coverageRange } from '../lib/dayDate.js';
 import { normalizeYmd } from '../lib/dateParams.js';
 import { displayCityName } from '../lib/cityNormalizations.js';
 import { readCityJson, dataBaseUrlHint } from '../lib/readCityData.js';
+import { validateLocation, validateDate } from '../lib/validate.js';
 
 /**
  * GET /api/prayer?country=al&city=tirana
@@ -24,13 +25,11 @@ export default async function handler(req, res) {
 
   const { country, city, date } = getQuery(req);
 
-  if (!country || !city) {
-    return res.status(400).json({
-      error: 'Missing params',
-      example: '/api/prayer?country=al&city=tirana',
-      hint: 'List cities: GET /api/cities or /api/cities?country=us',
-    });
-  }
+  const locationErr = validateLocation(country, city);
+  if (locationErr) return res.status(400).json({ error: locationErr, example: '/api/prayer?country=al&city=tirana' });
+
+  const dateErr = validateDate(date);
+  if (dateErr) return res.status(400).json({ error: dateErr });
 
   const cityData = await readCityJson(country, city);
 
@@ -46,13 +45,21 @@ export default async function handler(req, res) {
   const rows = Array.isArray(cityData.data) ? cityData.data : [];
   const target = normalizeYmd(date || today());
 
-  const day = rows.find(d => dayDateKey(d) === target);
+  let day = rows.find(d => dayDateKey(d) === target);
+  let approximate = false;
 
   if (!day) {
-    return res.status(404).json({
-      error: `No data for ${target}`,
-      coverage: coverageRange(rows),
-    });
+    const fallback = prevYearDate(target);
+    const fallbackDay = fallback ? rows.find(d => dayDateKey(d) === fallback) : null;
+    if (fallbackDay) {
+      day = fallbackDay;
+      approximate = true;
+    } else {
+      return res.status(404).json({
+        error: `No data for ${target}`,
+        coverage: coverageRange(rows),
+      });
+    }
   }
 
   return res.status(200).json({
@@ -60,6 +67,7 @@ export default async function handler(req, res) {
     city,
     cityDisplayName: displayCityName(country, city),
     date: target,
+    ...(approximate ? { approximate: true, approximateNote: 'Current year not yet available — using previous year times as estimate' } : {}),
     times: {
       fajr: day.fajr,
       sunrise: day.sunrise,
@@ -76,4 +84,10 @@ export default async function handler(req, res) {
 
 function today() {
   return new Date().toISOString().split('T')[0];
+}
+
+function prevYearDate(ymd) {
+  const m = ymd.match(/^(\d{4})-(\d{2}-\d{2})$/);
+  if (!m) return null;
+  return `${parseInt(m[1], 10) - 1}-${m[2]}`;
 }

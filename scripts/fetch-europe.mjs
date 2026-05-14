@@ -17,6 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { BASE, DELAY, getToken as _getToken, sleep } from './_shared.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -24,9 +25,7 @@ const DATA = path.join(ROOT, 'data');
 
 const EMAIL = process.env.DIYANET_EMAIL;
 const PASS = process.env.DIYANET_PASS;
-const BASE = 'https://awqatsalah.diyanet.gov.tr';
 const YEAR = new Date().getFullYear();
-const DELAY = 1200;
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
@@ -121,7 +120,7 @@ async function ensureValidToken() {
   const now = Date.now();
   if (!currentToken || now >= tokenExpiresAtMs - REFRESH_BEFORE_EXPIRY_MS) {
     process.stdout.write('\n  Refreshing auth token... ');
-    applyNewToken(await getToken());
+    applyNewToken(await _getToken(EMAIL, PASS));
     tokenRefreshCount++;
     process.stdout.write(`ok (expires in ~${Math.round((tokenExpiresAtMs - now) / 60000)} min)\n`);
   }
@@ -164,18 +163,6 @@ function slugify(name) {
     .substring(0, 40);
 }
 
-async function getToken() {
-  const res = await fetch(`${BASE}/Auth/Login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Email: EMAIL, Password: PASS }),
-  });
-  const d = await res.json();
-  const t = d?.data?.accessToken || d?.Data?.AccessToken;
-  if (!t) throw new Error('Login failed: ' + JSON.stringify(d).slice(0, 200));
-  return t;
-}
-
 async function _doFetch(token, districtId) {
   let res;
   try {
@@ -213,7 +200,7 @@ async function fetchCity(districtId) {
   let result = await _doFetch(currentToken, districtId);
   if (result.status === 401) {
     process.stdout.write('\n  HTTP 401 — forcing new token... ');
-    applyNewToken(await getToken());
+    applyNewToken(await _getToken(EMAIL, PASS));
     tokenRefreshCount++;
     process.stdout.write('ok\n  ');
     result = await _doFetch(currentToken, districtId);
@@ -306,7 +293,7 @@ async function main() {
 
   const logFile = path.join(ROOT, 'europe-errors.log');
   console.log('\nLogging in...');
-  applyNewToken(await getToken());
+  applyNewToken(await _getToken(EMAIL, PASS));
   tokenRefreshCount++;
   console.log(
     `Token OK (proactive refresh before JWT exp, plus retry on 401). Expiry ~${new Date(tokenExpiresAtMs).toISOString()}\n`
@@ -343,7 +330,7 @@ async function main() {
     }
 
     if (i < toFetch.length - 1) {
-      await new Promise(r => setTimeout(r, DELAY));
+      await sleep(DELAY);
     }
   }
 
