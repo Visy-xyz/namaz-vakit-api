@@ -26,6 +26,7 @@ const DATA = path.join(ROOT, 'data');
 
 const EMAIL = process.env.DIYANET_EMAIL;
 const PASS = process.env.DIYANET_PASS;
+const args = process.argv.slice(2);
 const YEAR = (() => {
   const i = args.indexOf('--year');
   if (i === -1) return new Date().getFullYear();
@@ -37,7 +38,6 @@ const YEAR = (() => {
   return n;
 })();
 
-const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const REFETCH = args.includes('--refetch');
 const ONLY_CTRY = args.includes('--country') ? args[args.indexOf('--country') + 1] : null;
