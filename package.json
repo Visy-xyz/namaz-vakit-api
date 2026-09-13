@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "dev": "vercel dev",
     "build:catalog": "node scripts/build-prayer-catalog.mjs",
+    "verify": "node scripts/verify.mjs",
     "fetch:yearly": "node scripts/fetch-yearly.mjs",
     "fetch:europe": "node scripts/fetch-europe.mjs"
   },

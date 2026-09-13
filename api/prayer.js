@@ -3,71 +3,88 @@ import { dayDateKey, coverageRange } from '../lib/dayDate.js';
 import { normalizeYmd } from '../lib/dateParams.js';
 import { displayCityName } from '../lib/cityNormalizations.js';
 import { readCityJson, dataBaseUrlHint } from '../lib/readCityData.js';
+import { invalidFields } from '../lib/validateCityData.js';
+import { checkRateLimit, clientIp } from '../lib/rateLimiter.js';
 import { validateLocation, validateDate } from '../lib/validate.js';
+import { cors, handledPreflight, ok, fail } from '../lib/respond.js';
 
 /**
  * GET /api/prayer?country=al&city=tirana
  * GET /api/prayer?country=al&city=tirana&date=2026-04-25
  *
- * Returns prayer times for a specific city and date.
- * `times` is a short subset; `detail` is the full Diyanet row from the JSON file.
- * `fileMeta` is the file’s `_meta` object (country, year, totalDays, fetchedAt, …).
- * Reads from cached JSON — ZERO calls to Diyanet. On Vercel, JSON is loaded from DATA_BASE_URL.
+ * Prayer times for one city and date. Reads from cached JSON — ZERO calls to
+ * Diyanet at request time. On Vercel the JSON comes from DATA_BASE_URL.
+ *
+ * `detail` (the full Diyanet row: hijri date, moon phase, astronomical times)
+ * is ALWAYS included — released app builds read those fields from it.
+ *
+ * When a date is not covered this returns 404. It deliberately does NOT fall
+ * back to the same date a year earlier: prayer times drift by minutes and the
+ * hijri date drifts by ~11 days, so stale data would be shown as if correct.
  */
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  cors(res);
+  if (handledPreflight(req, res)) return;
 
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    return res.status(204).end();
+  const rl = checkRateLimit(clientIp(req), 'prayer', 300);
+  res.setHeader('X-RateLimit-Remaining', rl.remaining);
+  if (rl.limited) {
+    res.setHeader('Retry-After', Math.ceil((rl.resetAt - Date.now()) / 1000));
+    return fail(res, 429, { error: 'Too many requests. Try again in a minute.' });
   }
 
-  const { country, city, date } = getQuery(req);
+  const q = getQuery(req);
+  const cc = (q.country || '').toLowerCase();
+  const slug = (q.city || '').toLowerCase();
 
-  const locationErr = validateLocation(country, city);
-  if (locationErr) return res.status(400).json({ error: locationErr, example: '/api/prayer?country=al&city=tirana' });
+  const locationErr = validateLocation(cc, slug);
+  if (locationErr) {
+    return fail(res, 400, {
+      error: locationErr,
+      example: '/api/prayer?country=al&city=tirana',
+      hint: 'List cities: GET /api/cities or /api/cities?country=al',
+    });
+  }
 
-  const dateErr = validateDate(date);
-  if (dateErr) return res.status(400).json({ error: dateErr });
+  const dateErr = validateDate(q.date);
+  if (dateErr) return fail(res, 400, { error: dateErr });
 
-  const cityData = await readCityJson(country, city);
+  const cityData = await readCityJson(cc, slug);
 
   if (!cityData) {
     const hint = dataBaseUrlHint();
-    return res.status(404).json({
-      error: `City not found: ${country}/${city}`,
-      hint: `Try /api/cities?country=${country}`,
+    return fail(res, 404, {
+      error: `City not found: ${cc}/${slug}`,
+      hint: `Try /api/cities?country=${cc}`,
       ...(hint ? { setup: hint } : {}),
     });
   }
 
   const rows = Array.isArray(cityData.data) ? cityData.data : [];
-  const target = normalizeYmd(date || today());
+  const target = normalizeYmd(q.date || localToday(rows));
 
-  let day = rows.find(d => dayDateKey(d) === target);
-  let approximate = false;
+  const day = rows.find(d => dayDateKey(d) === target);
 
   if (!day) {
-    const fallback = prevYearDate(target);
-    const fallbackDay = fallback ? rows.find(d => dayDateKey(d) === fallback) : null;
-    if (fallbackDay) {
-      day = fallbackDay;
-      approximate = true;
-    } else {
-      return res.status(404).json({
-        error: `No data for ${target}`,
-        coverage: coverageRange(rows),
-      });
-    }
+    return fail(res, 404, {
+      error: `No data for ${target}`,
+      coverage: coverageRange(rows),
+    });
   }
 
-  return res.status(200).json({
-    country,
-    city,
-    cityDisplayName: displayCityName(country, city),
+  const bad = invalidFields(day);
+  if (bad.length) {
+    return fail(res, 503, {
+      error: `Corrupt data for ${target}`,
+      invalidFields: bad,
+    });
+  }
+
+  return ok(res, {
+    country: cc,
+    city: slug,
+    cityDisplayName: displayCityName(cc, slug),
     date: target,
-    ...(approximate ? { approximate: true, approximateNote: 'Current year not yet available — using previous year times as estimate' } : {}),
     times: {
       fajr: day.fajr,
       sunrise: day.sunrise,
@@ -76,18 +93,30 @@ export default async function handler(req, res) {
       maghrib: day.maghrib,
       isha: day.isha,
     },
+    qiblaTime: day.qiblaTime ?? null,
+    moonPhaseUrl: day.shapeMoonUrl ?? null,
+    hijriDate: day.hijriDateLong ?? null,
+    astronomicalSunrise: day.astronomicalSunrise ?? null,
+    astronomicalSunset: day.astronomicalSunset ?? null,
+    timezoneOffset: day.greenwichMeanTimeZone ?? null,
     detail: day,
     fileMeta: cityData._meta ?? null,
     fetchedAt: cityData._meta?.fetchedAt,
   });
 }
 
-function today() {
-  return new Date().toISOString().split('T')[0];
-}
-
-function prevYearDate(ymd) {
-  const m = ymd.match(/^(\d{4})-(\d{2}-\d{2})$/);
-  if (!m) return null;
-  return `${parseInt(m[1], 10) - 1}-${m[2]}`;
+/**
+ * "Today" belongs to the city, not the server. Using the server's UTC date
+ * showed yesterday's times to users east of UTC just after midnight local.
+ *
+ * The per-day `greenwichMeanTimeZone` from Diyanet is already DST-adjusted, so
+ * anchor on the row for the current UTC date to learn the city's live offset,
+ * then re-derive the local date from it.
+ */
+function localToday(rows) {
+  const utcDate = new Date().toISOString().slice(0, 10);
+  const anchor = rows.find(d => dayDateKey(d) === utcDate);
+  const offsetHours = Number(anchor?.greenwichMeanTimeZone);
+  if (!Number.isFinite(offsetHours)) return utcDate;
+  return new Date(Date.now() + offsetHours * 3_600_000).toISOString().slice(0, 10);
 }

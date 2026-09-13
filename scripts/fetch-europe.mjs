@@ -8,8 +8,9 @@
  * Token handling: refreshes on HTTP 401, and proactively before JWT `exp` (or every ~40 min if not a JWT).
  *
  * Usage:
- *   node scripts/fetch-europe.mjs                  → skip cities that already have a file
- *   node scripts/fetch-europe.mjs --refetch        → overwrite existing
+ *   node scripts/fetch-europe.mjs                  → fetch cities missing THIS year's data
+ *   node scripts/fetch-europe.mjs --year 2027      → fetch a specific year (use in December)
+ *   node scripts/fetch-europe.mjs --refetch        → overwrite even files already on the target year
  *   node scripts/fetch-europe.mjs --country nl     → single country code
  *   node scripts/fetch-europe.mjs --dry-run        → counts only
  */
@@ -25,7 +26,16 @@ const DATA = path.join(ROOT, 'data');
 
 const EMAIL = process.env.DIYANET_EMAIL;
 const PASS = process.env.DIYANET_PASS;
-const YEAR = new Date().getFullYear();
+const YEAR = (() => {
+  const i = args.indexOf('--year');
+  if (i === -1) return new Date().getFullYear();
+  const n = Number(args[i + 1]);
+  if (!Number.isInteger(n) || n < 2000 || n > 2100) {
+    console.error(`--year needs a 4-digit year, got "${args[i + 1]}"`);
+    process.exit(1);
+  }
+  return n;
+})();
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
@@ -239,8 +249,36 @@ function save(country, city, districtId, days) {
   return file;
 }
 
-function fileExists(country, city) {
-  return fs.existsSync(path.join(DATA, country, `${city}.json`));
+/**
+ * Year already on disk for a city, or null.
+ *
+ * `_meta` is the first key of the file, so a short prefix read is enough — this
+ * runs for thousands of cities and the files are ~270 KB each.
+ */
+function fileYear(country, city) {
+  const file = path.join(DATA, country, `${city}.json`);
+  if (!fs.existsSync(file)) return null;
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(256);
+    const read = fs.readSync(fd, buf, 0, 256, 0);
+    const m = buf.toString('utf8', 0, read).match(/"year"\s*:\s*(\d{4})/);
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+/**
+ * A city is done only when its file is on the YEAR being fetched. Skipping on
+ * mere existence meant the yearly refresh silently fetched nothing and still
+ * reported success, leaving last year's times in place.
+ */
+function isCurrent(country, city) {
+  return fileYear(country, city) === YEAR;
 }
 
 function eta(done, total, startTime) {
@@ -260,14 +298,14 @@ async function main() {
   }
 
   console.log('='.repeat(60));
-  console.log('NAMAZ VAKIT — fetch-europe (countries-all / countries.json)');
+  console.log(`NAMAZ VAKIT — fetch-europe (countries-all / countries.json) — YEAR ${YEAR}`);
   if (DRY_RUN) console.log('DRY RUN');
   if (REFETCH) console.log('REFETCH (overwrite existing)');
   console.log('='.repeat(60));
 
   const countriesData = loadCountriesJson();
   const allCities = buildCityList(countriesData);
-  const toFetch = REFETCH ? allCities : allCities.filter(c => !fileExists(c.country, c.city));
+  const toFetch = REFETCH ? allCities : allCities.filter(c => !isCurrent(c.country, c.city));
   const skipped = allCities.length - toFetch.length;
 
   const byCountry = {};
@@ -276,7 +314,7 @@ async function main() {
   }
 
   console.log(`Total cities:     ${allCities.length}`);
-  console.log(`Already on disk:  ${skipped}`);
+  console.log(`Already on ${YEAR}: ${skipped}`);
   console.log(`To fetch:         ${toFetch.length}`);
   console.log(`Rough time:       ~${Math.ceil((toFetch.length * DELAY) / 1000 / 60)} min\n`);
 

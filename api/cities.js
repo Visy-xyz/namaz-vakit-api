@@ -5,6 +5,8 @@ import { dataRoot } from '../lib/paths.js';
 import { countryMeta } from '../lib/countryMeta.js';
 import { displayCityName } from '../lib/cityNormalizations.js';
 import { catalogCitiesByCountry } from '../lib/prayerCatalog.js';
+import { checkRateLimit, clientIp } from '../lib/rateLimiter.js';
+import { cors, handledPreflight, ok, fail } from '../lib/respond.js';
 
 const DATA_DIR = dataRoot();
 
@@ -76,23 +78,36 @@ function citiesFromFilesystem(countryFilter) {
 
 /**
  * GET /api/cities              → all countries + cities
- * GET /api/cities?country=al   → only that country
+ * GET /api/cities?country=af   → only that country
  *
  * On Vercel, uses generated/prayer-catalog.json (see scripts/build-prayer-catalog.mjs).
  * Locally falls back to scanning data/ if the catalog is missing.
  */
 export default function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, max-age=300');
+  cors(res);
+  if (handledPreflight(req, res)) return;
 
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    return res.status(204).end();
+  const rl = checkRateLimit(clientIp(req), 'cities', 60);
+  res.setHeader('X-RateLimit-Remaining', rl.remaining);
+  if (rl.limited) {
+    res.setHeader('Retry-After', Math.ceil((rl.resetAt - Date.now()) / 1000));
+    return fail(res, 429, { error: 'Too many requests. Try again in a minute.' });
   }
 
-  const { country } = getQuery(req);
-  const fromCat = citiesFromCatalog(country || undefined);
-  const payload = fromCat ?? citiesFromFilesystem(country || undefined);
+  const q = getQuery(req);
+  const cc = (q.country || '').toLowerCase() || undefined;
 
-  return res.status(200).json(payload);
+  if (cc && !/^[a-z][a-z0-9_]+$/.test(cc)) {
+    return fail(res, 400, { error: 'Invalid country code — use a code from /api/cities, e.g. "al".' });
+  }
+
+  const fromCat = citiesFromCatalog(cc);
+  const payload = fromCat ?? citiesFromFilesystem(cc);
+
+  if (cc && !payload[cc]) {
+    return fail(res, 404, { error: `Unknown country: ${cc}`, hint: 'GET /api/cities for the full list' });
+  }
+
+  // The catalog only changes on the yearly refresh; clients re-check daily.
+  return ok(res, payload, 86400);
 }

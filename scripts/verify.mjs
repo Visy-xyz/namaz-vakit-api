@@ -7,6 +7,12 @@
  *   node scripts/verify.mjs --country al  → single country
  *   node scripts/verify.mjs --verbose     → print every issue, not just summaries
  *   node scripts/verify.mjs --fail-fast   → stop after first failing city
+ *   node scripts/verify.mjs --year 2027   → also assert every file covers 2027
+ *   node scripts/verify.mjs --quiet       → print failures and the summary only
+ *
+ * --year is what makes the yearly refresh trustworthy: without it a run that
+ * fetched nothing still "passes", because last year's data is perfectly valid
+ * data — just for the wrong year.
  *
  * Exit code 0 = all clean, 1 = one or more failures.
  */
@@ -23,6 +29,17 @@ const args        = process.argv.slice(2);
 const VERBOSE     = args.includes('--verbose');
 const FAIL_FAST   = args.includes('--fail-fast');
 const ONLY_COUNTRY = (() => { const i = args.indexOf('--country'); return i !== -1 ? args[i + 1] : null; })();
+const QUIET       = args.includes('--quiet');
+const EXPECT_YEAR = (() => {
+  const i = args.indexOf('--year');
+  if (i === -1) return null;
+  const n = Number(args[i + 1]);
+  if (!Number.isInteger(n) || n < 2000 || n > 2100) {
+    console.error(`--year needs a 4-digit year, got "${args[i + 1]}"`);
+    process.exit(1);
+  }
+  return n;
+})();
 
 const TIME_RE = /^\d{2}:\d{2}$/;
 const PRAYER_FIELDS = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
@@ -111,6 +128,9 @@ function checkFile(filePath, country) {
   } else {
     for (const f of ['country', 'city', 'year', 'fetchedAt', 'totalDays']) {
       if (meta[f] == null) issues.push(`_meta.${f} missing`);
+    }
+    if (EXPECT_YEAR != null && meta.year != null && Number(meta.year) !== EXPECT_YEAR) {
+      issues.push(`STALE: _meta.year=${meta.year} but expected ${EXPECT_YEAR} — this file was not refreshed`);
     }
   }
 
@@ -249,8 +269,10 @@ function main() {
 
   for (const { filePath, country, city } of files) {
     if (country !== lastCountry) {
-      if (lastCountry) console.log('');
-      console.log(`  [${country.toUpperCase()}]`);
+      if (!QUIET) {
+        if (lastCountry) console.log('');
+        console.log(`  [${country.toUpperCase()}]`);
+      }
       lastCountry = country;
     }
 
